@@ -1,0 +1,40 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+.coverage
+.coverage.*
+.pytest_cache/
+
+# mypy / type checking
+.mypy_cache/
+.pyre/
+.pytype/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# uv
+.uv/
+
+# Logs
+*.log
