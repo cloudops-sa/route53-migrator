@@ -81,6 +81,74 @@ def record_key(rrset: Dict[str, Any]) -> Tuple[str, str, str]:
     return name, rtype, set_id
 
 
+def _sorted_resource_records(rrset: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rrs = rrset.get("ResourceRecords")
+    if not isinstance(rrs, list):
+        return []
+    cleaned: List[Dict[str, Any]] = []
+    for item in rrs:
+        if isinstance(item, dict) and "Value" in item:
+            cleaned.append({"Value": str(item["Value"])})
+    cleaned.sort(key=lambda x: x.get("Value", ""))
+    return cleaned
+
+
+def normalize_rrset(rrset: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a comparable representation of a record set.
+
+    This intentionally ignores fields that do not affect desired state comparisons.
+    """
+
+    out: Dict[str, Any] = {}
+    for k in (
+        "Name",
+        "Type",
+        "SetIdentifier",
+        "Weight",
+        "Region",
+        "Failover",
+        "GeoLocation",
+        "MultiValueAnswer",
+        "HealthCheckId",
+    ):
+        if k in rrset:
+            out[k] = rrset[k]
+
+    if "AliasTarget" in rrset:
+        out["AliasTarget"] = rrset.get("AliasTarget")
+    else:
+        if "TTL" in rrset:
+            out["TTL"] = rrset.get("TTL")
+        out["ResourceRecords"] = _sorted_resource_records(rrset)
+
+    return out
+
+
+def rrset_equivalent(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+    return normalize_rrset(a) == normalize_rrset(b)
+
+
+def classify_change(
+    action: str,
+    desired_rrset: Dict[str, Any],
+    target_index: Dict[Tuple[str, str, str], Dict[str, Any]],
+) -> str:
+    """Return one of: create, update, noop.
+
+    - For CREATE: existing records are treated as update (will likely fail on apply).
+    - For UPSERT: if equivalent, treated as noop.
+    """
+
+    key = record_key(desired_rrset)
+    existing = target_index.get(key)
+    if existing is None:
+        return "create"
+
+    if action == "UPSERT" and rrset_equivalent(existing, desired_rrset):
+        return "noop"
+    return "update"
+
+
 def fetch_target_index(target_profile: str, target_zone_id: str) -> Dict[Tuple[str, str, str], Dict[str, Any]]:
     client = route53_client(target_profile)
     index: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
@@ -164,16 +232,51 @@ def estimate_diff_against_target(
     batches_doc: Dict[str, Any],
     target_index: Dict[Tuple[str, str, str], Dict[str, Any]],
 ) -> Dict[str, int]:
-    new_count = 0
-    existing_count = 0
+    create_count = 0
+    update_count = 0
+    noop_count = 0
+
+    default_action = str(batches_doc.get("action") or "").upper() or "UPSERT"
 
     for batch in batches_doc.get("batches", []) or []:
         for ch in batch.get("Changes", []) or []:
             rrset = ch.get("ResourceRecordSet", {}) or {}
-            key = record_key(rrset)
-            if key in target_index:
-                existing_count += 1
+            action = str(ch.get("Action") or default_action).upper()
+            cls = classify_change(action, rrset, target_index)
+            if cls == "create":
+                create_count += 1
+            elif cls == "noop":
+                noop_count += 1
             else:
-                new_count += 1
+                update_count += 1
 
-    return {"would_create_new": new_count, "would_touch_existing": existing_count}
+    return {
+        "would_create_new": create_count,
+        "would_update_existing": update_count,
+        "would_be_noop": noop_count,
+    }
+
+
+def filter_noop_upserts(
+    batches_doc: Dict[str, Any],
+    target_index: Dict[Tuple[str, str, str], Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Return a copy of batches_doc with no-op UPSERT changes removed."""
+
+    default_action = str(batches_doc.get("action") or "").upper() or "UPSERT"
+    new_doc = dict(batches_doc)
+    new_batches: List[Dict[str, Any]] = []
+
+    for batch in batches_doc.get("batches", []) or []:
+        changes_out: List[Dict[str, Any]] = []
+        for ch in batch.get("Changes", []) or []:
+            rrset = ch.get("ResourceRecordSet", {}) or {}
+            action = str(ch.get("Action") or default_action).upper()
+            if action == "UPSERT" and classify_change(action, rrset, target_index) == "noop":
+                continue
+            changes_out.append(ch)
+        if changes_out:
+            new_batches.append({"Changes": changes_out})
+
+    new_doc["batches"] = new_batches
+    return new_doc

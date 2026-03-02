@@ -38,3 +38,8 @@ pip-delete-this-directory.txt
 
 # Logs
 *.log
+
+# Route53 migrator artifacts / intermediate outputs
+artifacts/
+route53-migrator.config.json
+route53-migrator.config.*.json

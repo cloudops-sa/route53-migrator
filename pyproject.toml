@@ -7,6 +7,11 @@ dependencies = [
   "boto3>=1.34.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+]
+
 [project.scripts]
 route53-migrator = "route53_migrator_lib.cli:main"
 
