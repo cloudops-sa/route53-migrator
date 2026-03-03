@@ -50,6 +50,48 @@ uv run route53-migrator --config ./route53-migrator.config.json export
 uv run route53-migrator --config ./route53-migrator.config.json import
 ```
 
+## Docker usage
+
+Build the image:
+
+```bash
+docker build -t route53-migrator:local .
+```
+
+Publishing to GHCR is handled by GitHub Actions (`.github/workflows/publish-ghcr.yml`) on pushes to `main` and version tags (`v*`).
+
+Run (mount AWS profiles and your working directory so configs/artifacts persist):
+
+```bash
+docker run --rm -it \
+  -v "$HOME/.aws:/root/.aws:ro" \
+  -v "$PWD:/work" -w /work \
+  route53-migrator:local --help
+```
+
+Interactive wizard:
+
+```bash
+docker run --rm -it \
+  -v "$HOME/.aws:/root/.aws:ro" \
+  -v "$PWD:/work" -w /work \
+  route53-migrator:local -i
+```
+
+Export / import with config:
+
+```bash
+docker run --rm -it \
+  -v "$HOME/.aws:/root/.aws:ro" \
+  -v "$PWD:/work" -w /work \
+  route53-migrator:local --config ./route53-migrator.config.json export
+
+docker run --rm -it \
+  -v "$HOME/.aws:/root/.aws:ro" \
+  -v "$PWD:/work" -w /work \
+  route53-migrator:local --config ./route53-migrator.config.json import
+```
+
 ### Export
 
 Export to local artifacts:
