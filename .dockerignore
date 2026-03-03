@@ -1,0 +1,12 @@
+.git
+.venv
+.uv
+__pycache__
+*.py[cod]
+*.log
+artifacts
+route53-migrator.config.json
+route53-migrator.config.*.json
+.DS_Store
+.idea
+.vscode
